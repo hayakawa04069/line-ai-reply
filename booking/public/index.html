@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ご予約 | お店の予約カレンダー</title>
+  <link rel="stylesheet" href="/style.css">
+  <script defer src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header><a class="brand" href="/">BOOKING <span>ご予約</span></a><a href="/admin">店舗ログイン</a></header>
+  <main>
+    <div class="intro"><p class="eyebrow">ONLINE RESERVATION</p><h1 id="store-name">お店の予約カレンダー</h1><p>ご希望のメニューと日時をお選びください。</p></div>
+    <p id="message" class="notice" role="status" aria-live="polite" hidden></p>
+    <div id="booking-flow">
+      <section class="panel"><h2><span class="step">1</span> メニューを選ぶ</h2><div id="menus" class="menu-grid"><p>メニューを読み込んでいます…</p></div></section>
+      <section class="panel"><h2><span class="step">2</span> 日時を選ぶ</h2>
+        <div class="calendar-layout"><div>
+          <div class="month-nav"><button id="prev-month" type="button" aria-label="前の月" disabled>‹</button><h3 id="month-label"></h3><button id="next-month" type="button" aria-label="次の月" disabled>›</button></div>
+          <div class="weekdays" aria-hidden="true"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div>
+          <div id="calendar" class="calendar" aria-label="予約日を選択"></div>
+          <p class="muted">日時はすべて日本時間です。空き状況は日付選択後に表示します。</p>
+        </div><div><h3 id="slots-label">日付を選んでください</h3><div id="slots" class="slots"><p class="muted">先にメニューと日付を選択してください。</p></div></div></div>
+      </section>
+      <section class="panel"><h2><span class="step">3</span> 内容を確認して予約</h2>
+        <p id="selection" class="summary">メニューと日時を選ぶと、ここに表示されます。</p>
+        <form id="reservation-form">
+          <label for="display-name">お名前 <span class="required">必須</span></label>
+          <input id="display-name" name="name" autocomplete="name" maxlength="100" required placeholder="お店でお呼びするお名前">
+          <p class="muted">お名前とLINEアカウントを予約管理に使用します。予約情報は店舗管理者が確認します。電話番号は不要です。</p>
+          <button id="line-login" type="button" class="secondary" disabled>LINEの接続を確認しています…</button>
+          <button id="reserve" class="primary" type="submit" disabled>この内容で予約を確定する</button>
+          <p class="muted">確定時に空き状況を再確認します。他のお客様が先に予約した場合は、別の時間をお選びください。</p>
+        </form>
+      </section>
+    </div>
+    <section id="completion" class="panel completion" hidden tabindex="-1"><p class="eyebrow">RESERVATION COMPLETE</p><h2>ご予約が完了しました</h2><p>ご来店をお待ちしております。</p><div id="completed-details" class="summary"></div><p class="muted">変更・キャンセルは店舗へ直接ご連絡ください。</p><button id="new-reservation" class="secondary">別の予約をする</button></section>
+  </main><footer>お店のオンライン予約 · 日本時間</footer>
+</body>
+</html>

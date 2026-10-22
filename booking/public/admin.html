@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>店舗管理 | 予約一覧</title><link rel="stylesheet" href="/style.css"><script type="module" src="/admin.js"></script></head>
+<body>
+  <header><a class="brand" href="/admin">BOOKING <span>店舗管理</span></a><a href="/">お客様用ページ</a></header>
+  <main>
+    <div class="intro"><p class="eyebrow">STORE MANAGEMENT</p><h1>予約を確認する</h1><p>店舗管理者専用のページです。</p></div>
+    <p id="message" class="notice" role="status" aria-live="polite" hidden></p>
+    <section id="login-panel" class="panel login-panel"><h2>管理者ログイン</h2><p class="muted">店舗管理者として登録されたアカウントでログインしてください。</p>
+      <form id="login-form"><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="username" maxlength="254" required><label for="password">パスワード</label><input id="password" type="password" autocomplete="current-password" maxlength="1024" required><button id="login" class="primary" type="submit">ログイン</button></form>
+    </section>
+    <section id="dashboard" class="panel" hidden><div class="section-heading"><h2>予約一覧</h2><button id="logout" class="secondary" type="button">ログアウト</button></div>
+      <div class="date-toolbar"><button id="previous-day" aria-label="前日">‹</button><label for="date">表示する日付</label><input id="date" type="date" required><button id="next-day" aria-label="翌日">›</button><button id="refresh" class="secondary">再読み込み</button></div>
+      <p class="muted">日本時間で表示しています。予約の変更・キャンセル、営業設定画面は今後追加予定です。</p>
+      <p id="count" role="status"></p><div id="reservation-list" class="reservation-list"></div>
+    </section>
+  </main><footer>店舗管理 · ログアウトすると予約情報を画面から消去します</footer>
+</body>
+</html>
