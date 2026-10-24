@@ -2,6 +2,10 @@ export class AppError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 export const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+// DBのupdated_atは小数点以下6桁の場合があるため、Dateへの変換で丸めずに使う。
+export const validTimestamp = value => typeof value === 'string'
+  && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+  && Number.isFinite(Date.parse(value));
 export const japanDate = (now = new Date()) => new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
 export function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -139,9 +143,24 @@ export function createServices(config, fetchImpl = fetch) {
       const [start, end] = dateRange(date);
       // 利用者のJWTで取得し、DBのRLSも適用。電話番号とLINE IDは取得しない。
       return db(query('reservations', {
-        select: 'id,menu_name,starts_at,ends_at,price_yen,status,customers(display_name)',
+        select: 'id,menu_name,starts_at,ends_at,price_yen,status,updated_at,customers(display_name)',
         starts_at: `gte.${start}`, and: `(starts_at.lt.${end})`, order: 'starts_at',
       }), { token });
+    },
+    async cancelReservation(id, updatedAt, token) {
+      // キャンセルでservice_roleにフォールバックしない。必ず本人のJWTを使用。
+      if (typeof token !== 'string' || !token) throw new AppError(401, '管理者ログインが必要です。');
+      if (!uuid(id) || !validTimestamp(updatedAt)) throw new AppError(400, '予約情報を読み込み直してください。');
+      const select = 'id,status,updated_at';
+      const rows = await db(query('reservations', {
+        select, id: `eq.${id}`, status: 'eq.confirmed', updated_at: `eq.${updatedAt}`,
+      }), { token, method: 'PATCH', body: { status: 'cancelled' }, prefer: 'return=representation' });
+      if (rows.length) return rows[0];
+      // 同時操作・応答喪失後の再送は、変更せず現在の状態を確認する。
+      const current = await db(query('reservations', { select, id: `eq.${id}` }), { token });
+      if (!current.length) throw new AppError(404, '予約が見つからないか、閲覧する権限がありません。');
+      if (current[0].status === 'cancelled') return current[0];
+      throw new AppError(409, '予約が変更されたか、来店済みです。一覧を読み込み直して確認してください。');
     },
   };
 }

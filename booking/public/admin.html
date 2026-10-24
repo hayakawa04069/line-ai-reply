@@ -11,9 +11,16 @@
     </section>
     <section id="dashboard" class="panel" hidden><div class="section-heading"><h2>予約一覧</h2><button id="logout" class="secondary" type="button">ログアウト</button></div>
       <div class="date-toolbar"><button id="previous-day" aria-label="前日">‹</button><label for="date">表示する日付</label><input id="date" type="date" required><button id="next-day" aria-label="翌日">›</button><button id="refresh" class="secondary">再読み込み</button></div>
-      <p class="muted">日本時間で表示しています。予約の変更・キャンセル、営業設定画面は今後追加予定です。</p>
+      <p class="muted">日本時間で表示しています。確定済みの予約をキャンセルできます。日時変更・営業設定画面は今後追加予定です。</p>
       <p id="count" role="status"></p><div id="reservation-list" class="reservation-list"></div>
     </section>
+    <dialog id="cancel-dialog" aria-labelledby="cancel-title" aria-describedby="cancel-description">
+      <h2 id="cancel-title">この予約をキャンセルしますか？</h2>
+      <p id="cancel-description">予約の記録は残り、この時間を再び予約できるようになります。</p>
+      <div id="cancel-details" class="summary"></div>
+      <p id="cancel-progress" role="status" aria-live="polite"></p>
+      <div class="dialog-actions"><button id="cancel-back" class="secondary" type="button" autofocus>戻る</button><button id="cancel-confirm" class="danger" type="button">キャンセルを確定</button></div>
+    </dialog>
   </main><footer>店舗管理 · ログアウトすると予約情報を画面から消去します</footer>
 </body>
 </html>

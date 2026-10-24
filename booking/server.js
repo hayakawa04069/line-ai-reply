@@ -2,7 +2,7 @@ import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { AppError, createServices, dateRange, uuid } from './lib.js';
+import { AppError, createServices, dateRange, uuid, validTimestamp } from './lib.js';
 
 export function createBookingServer(config, services = createServices(config)) {
   const sessions = new Map();
@@ -107,6 +107,16 @@ export function createBookingServer(config, services = createServices(config)) {
         const session = await admin(req);
         const date = url.searchParams.get('date'); dateRange(date);
         return json(200, { reservations: await services.reservations(date, session.token) });
+      }
+      const cancellation = path.match(/^\/api\/admin\/reservations\/([^/]+)\/cancel$/);
+      if (req.method === 'POST' && cancellation) {
+        const session = await admin(req);
+        const data = await body(req);
+        if (!uuid(cancellation[1]) || !validTimestamp(data.updatedAt) || Object.keys(data).length !== 1) {
+          throw new AppError(400, '予約情報を読み込み直してください。');
+        }
+        const reservation = await services.cancelReservation(cancellation[1], data.updatedAt, session.token);
+        return json(200, { reservation });
       }
       throw new AppError(404, 'ページが見つかりません。');
     } catch (error) {
