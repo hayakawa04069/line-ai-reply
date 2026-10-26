@@ -6,6 +6,9 @@ export const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]
 export const validTimestamp = value => typeof value === 'string'
   && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
   && Number.isFinite(Date.parse(value));
+export const validStart = value => typeof value === 'string'
+  && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/.test(value)
+  && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
 export const japanDate = (now = new Date()) => new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
 export function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -70,22 +73,51 @@ export function createServices(config, fetchImpl = fetch) {
     return rows[0];
   }
   const summary = row => ({ id: row.id, menu_name: row.menu_name, starts_at: row.starts_at, ends_at: row.ends_at, price_yen: row.price_yen, status: row.status });
+  async function slotsFor(date, menuId, token, excludeId) {
+    const [start, end] = dateRange(date);
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+    const options = token ? { token } : {};
+    const reservationQuery = { select: 'starts_at,ends_at', status: 'neq.cancelled', starts_at: `lt.${end}`, ends_at: `gt.${start}` };
+    if (excludeId) reservationQuery.id = `neq.${excludeId}`;
+    const [stores, menus, hours, closed, reservations] = await Promise.all([
+      db('booking_settings?select=store_name,slot_minutes,booking_window_days&singleton=eq.true', options),
+      db(query('menus', { select: 'id,name,duration_minutes,price_yen', id: `eq.${menuId}`, active: 'eq.true' }), options),
+      db(query('business_hours', { select: 'opens_at,closes_at', weekday: `eq.${weekday}` }), options),
+      db(query('closed_days', { select: 'closed_date', closed_date: `eq.${date}` }), options),
+      db(query('reservations', reservationQuery), options),
+    ]);
+    if (!stores?.length) throw new AppError(503, '店舗の営業設定を確認してください。');
+    if (!menus?.length) throw new AppError(400, 'このメニューは現在予約できません。');
+    return { menu: menus[0], slots: availableSlots({ date, menu: menus[0], settings: stores[0], hours: hours[0], closed: closed.length > 0, reservations }) };
+  }
   return {
     async catalog() {
       const [store, menus] = await Promise.all([settings(), db('menus?select=id,name,duration_minutes,price_yen&active=eq.true&order=name')]);
       return { store, menus };
     },
     async slots(date, menuId) {
-      const [start, end] = dateRange(date);
-      const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-      const [store, menus, hours, closed, reservations] = await Promise.all([
-        settings(), db(query('menus', { select: 'duration_minutes', id: `eq.${menuId}`, active: 'eq.true' })),
-        db(query('business_hours', { select: 'opens_at,closes_at', weekday: `eq.${weekday}` })),
-        db(query('closed_days', { select: 'closed_date', closed_date: `eq.${date}` })),
-        db(query('reservations', { select: 'starts_at,ends_at', status: 'neq.cancelled', starts_at: `lt.${end}`, ends_at: `gt.${start}` })),
-      ]);
-      if (!menus?.length) throw new AppError(400, 'メニューを選び直してください。');
-      return availableSlots({ date, menu: menus[0], settings: store, hours: hours[0], closed: closed.length > 0, reservations });
+      return (await slotsFor(date, menuId)).slots;
+    },
+    async rescheduleSlots(id, date, token) {
+      if (!token) throw new AppError(401, '管理者ログインが必要です。');
+      if (!uuid(id)) throw new AppError(400, '予約情報を確認してください。');
+      dateRange(date);
+      const rows = await db(query('reservations', { select: 'id,menu_id,status', id: `eq.${id}` }), { token });
+      if (!rows.length) throw new AppError(404, '予約が見つかりません。');
+      if (rows[0].status !== 'confirmed') throw new AppError(409, '確定済みの予約だけ日時変更できます。');
+      return slotsFor(date, rows[0].menu_id, token, id);
+    },
+    async rescheduleReservation(id, updatedAt, startsAt, token) {
+      if (!token) throw new AppError(401, '管理者ログインが必要です。');
+      if (!uuid(id) || !validTimestamp(updatedAt) || !validStart(startsAt)) throw new AppError(400, '変更する日時を確認してください。');
+      const rows = await db(query('reservations', {
+        select: 'id,status,starts_at,ends_at,updated_at,menu_name,duration_minutes,price_yen',
+        id: `eq.${id}`, status: 'eq.confirmed', updated_at: `eq.${updatedAt}`,
+      }), { token, method: 'PATCH', body: { starts_at: startsAt }, prefer: 'return=representation' });
+      if (rows.length) return rows[0];
+      const current = await db(query('reservations', { select: 'id', id: `eq.${id}` }), { token });
+      if (!current.length) throw new AppError(404, '予約が見つからないか、閲覧する権限がありません。');
+      throw new AppError(409, '予約が変更されています。一覧を読み直して確認してください。');
     },
     async verifyLine(idToken) {
       const response = await fetchImpl('https://api.line.me/oauth2/v2.1/verify', {

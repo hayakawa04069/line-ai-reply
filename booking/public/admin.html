@@ -11,9 +11,19 @@
     </section>
     <section id="dashboard" class="panel" hidden><div class="section-heading"><h2>予約一覧</h2><button id="logout" class="secondary" type="button">ログアウト</button></div>
       <div class="date-toolbar"><button id="previous-day" aria-label="前日">‹</button><label for="date">表示する日付</label><input id="date" type="date" required><button id="next-day" aria-label="翌日">›</button><button id="refresh" class="secondary">再読み込み</button></div>
-      <p class="muted">日本時間で表示しています。確定済みの予約をキャンセルできます。日時変更・営業設定画面は今後追加予定です。</p>
+      <p class="muted">日本時間で表示しています。確定済みの予約の日時変更・キャンセルができます。営業設定画面は今後追加予定です。</p>
       <p id="count" role="status"></p><div id="reservation-list" class="reservation-list"></div>
     </section>
+    <dialog id="reschedule-dialog" aria-labelledby="reschedule-title">
+      <h2 id="reschedule-title">予約日時を変更する</h2>
+      <div id="reschedule-original" class="summary"></div>
+      <p>変更時点のメニューの料金・所要時間が適用されます。内容を確認して確定してください。</p>
+      <label for="reschedule-date">変更先の日付（日本時間）</label><input id="reschedule-date" type="date" required>
+      <label for="reschedule-time">空いている開始時間</label><select id="reschedule-time" disabled><option value="">日付を選択してください</option></select>
+      <div id="reschedule-preview" class="summary"></div>
+      <p id="reschedule-message" role="status" aria-live="polite"></p>
+      <div class="dialog-actions"><button id="reschedule-back" class="secondary" type="button" autofocus>戻る</button><button id="reschedule-confirm" type="button" disabled>変更を確定</button></div>
+    </dialog>
     <dialog id="cancel-dialog" aria-labelledby="cancel-title" aria-describedby="cancel-description">
       <h2 id="cancel-title">この予約をキャンセルしますか？</h2>
       <p id="cancel-description">予約の記録は残り、この時間を再び予約できるようになります。</p>

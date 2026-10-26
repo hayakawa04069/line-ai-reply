@@ -4,6 +4,9 @@ let version = 0;
 let authVersion = 0;
 let cancelling = false;
 let cancelTarget = null;
+let moveTarget = null;
+let slotVersion = 0;
+let moveMenu = null;
 function closeConfirmation() {
   $('#cancel-dialog').close();
   cancelTarget = null;
@@ -14,7 +17,7 @@ function cancellationControls() {
   $('#cancel-back').disabled = cancelling;
   $('#cancel-confirm').textContent = cancelling ? 'キャンセル処理中…' : 'キャンセルを確定';
   $('#cancel-progress').textContent = cancelling ? '予約の状態を確認しています。画面を閉じずにお待ちください。' : '';
-  for (const element of document.querySelectorAll('.cancel-reservation, .date-toolbar button, #date')) element.disabled = cancelling;
+  for (const element of document.querySelectorAll('.cancel-reservation, .reschedule-reservation, .date-toolbar button, #date')) element.disabled = cancelling;
 }
 function openConfirmation(reservation) {
   if (cancelling || $('#dashboard').hidden) return;
@@ -30,7 +33,7 @@ function openConfirmation(reservation) {
 function show(loggedIn) {
   $('#login-panel').hidden = loggedIn; $('#dashboard').hidden = !loggedIn;
   if (!loggedIn) {
-    authVersion++; version++; closeConfirmation();
+    authVersion++; version++; closeConfirmation(); closeReschedule();
     $('#reservation-list').replaceChildren(); $('#count').textContent = '';
   }
 }
@@ -52,7 +55,10 @@ async function load() {
         const button = node('button', '予約をキャンセル', 'cancel-reservation');
         button.type = 'button'; button.disabled = cancelling;
         button.addEventListener('click', () => openConfirmation(reservation));
-        card.append(button);
+        const change = node('button', '予約日時を変更', 'reschedule-reservation');
+        change.type = 'button'; change.disabled = cancelling;
+        change.addEventListener('click', () => openReschedule(reservation));
+        card.append(change, button);
       }
       $('#reservation-list').append(card);
     }
@@ -133,4 +139,109 @@ document.addEventListener('visibilitychange', async () => {
     resumeSession = false;
     if (await checkSession()) { show(true); load(); }
   }
+});
+
+// 日時変更も、更新日時による競合検出と管理者セッションを利用する。
+function closeReschedule() {
+  slotVersion++;
+  moveTarget = null; moveMenu = null;
+  $('#reschedule-dialog').close();
+  $('#reschedule-original').replaceChildren();
+  $('#reschedule-preview').replaceChildren();
+  $('#reschedule-time').replaceChildren();
+  $('#reschedule-message').textContent = '';
+}
+function moveControls() {
+  $('#reschedule-date').disabled = cancelling;
+  $('#reschedule-time').disabled = cancelling || !moveMenu;
+  $('#reschedule-back').disabled = cancelling;
+  $('#reschedule-confirm').disabled = cancelling || !moveTarget || !moveMenu || !$('#reschedule-time').value;
+  $('#reschedule-confirm').textContent = cancelling ? '変更処理中…' : '変更を確定';
+}
+function previewMove() {
+  const startsAt = $('#reschedule-time').value;
+  $('#reschedule-preview').replaceChildren();
+  if (startsAt && moveMenu) {
+    const endsAt = new Date(Date.parse(startsAt) + moveMenu.duration_minutes * 60000).toISOString();
+    $('#reschedule-preview').append(
+      node('p', `変更後：${dateText(startsAt)} 〜 ${timeText(endsAt)}`),
+      node('p', `${moveMenu.name} · ${moveMenu.duration_minutes}分 · ${yen(moveMenu.price_yen)}`),
+    );
+  }
+  moveControls();
+}
+async function loadMoveSlots() {
+  const target = moveTarget;
+  const request = ++slotVersion;
+  const operationAuth = authVersion;
+  moveMenu = null;
+  $('#reschedule-time').replaceChildren(node('option', '読み込み中…'));
+  $('#reschedule-preview').replaceChildren();
+  $('#reschedule-message').textContent = '';
+  moveControls();
+  if (!target) return;
+  try {
+    const result = await api(`/api/admin/reservations/${target.id}/reschedule-slots?${new URLSearchParams({ date: $('#reschedule-date').value })}`);
+    if (request !== slotVersion || operationAuth !== authVersion || !moveTarget) return;
+    moveMenu = result.menu;
+    const placeholder = node('option', result.slots.length ? '時間を選択してください' : '空き時間がありません');
+    placeholder.value = '';
+    $('#reschedule-time').replaceChildren(placeholder);
+    for (const startsAt of result.slots) {
+      if (startsAt === target.starts_at) continue;
+      const option = node('option', timeText(startsAt)); option.value = startsAt;
+      $('#reschedule-time').append(option);
+    }
+    if ($('#reschedule-time').options.length === 1) placeholder.textContent = '変更できる空き時間がありません';
+    moveControls();
+  } catch (error) {
+    if (request !== slotVersion || operationAuth !== authVersion || !moveTarget) return;
+    $('#reschedule-time').replaceChildren();
+    if (error.status === 401 || error.status === 403) { show(false); message(error.message, true); }
+    else $('#reschedule-message').textContent = error.message;
+    moveControls();
+  }
+}
+function openReschedule(reservation) {
+  if (cancelling || $('#dashboard').hidden) return;
+  moveTarget = { ...reservation };
+  $('#reschedule-original').replaceChildren(
+    node('p', `お客様：${reservation.customers?.display_name || 'お客様'}`),
+    node('p', `変更前：${dateText(reservation.starts_at)} 〜 ${timeText(reservation.ends_at)}`),
+    node('p', `${reservation.menu_name} · ${yen(reservation.price_yen)}`),
+  );
+  $('#reschedule-date').min = today();
+  $('#reschedule-date').value = new Date(Date.parse(reservation.starts_at) + 9 * 3600000).toISOString().slice(0, 10);
+  $('#reschedule-dialog').showModal();
+  loadMoveSlots();
+}
+$('#reschedule-date').addEventListener('change', loadMoveSlots);
+$('#reschedule-time').addEventListener('change', previewMove);
+$('#reschedule-back').addEventListener('click', () => { if (!cancelling) closeReschedule(); });
+$('#reschedule-dialog').addEventListener('cancel', event => {
+  if (cancelling) event.preventDefault(); else closeReschedule();
+});
+$('#reschedule-confirm').addEventListener('click', async () => {
+  if (cancelling || !moveTarget || !moveMenu || !$('#reschedule-time').value || $('#dashboard').hidden) return;
+  const target = moveTarget;
+  const startsAt = $('#reschedule-time').value;
+  const operationAuth = authVersion;
+  cancelling = true; slotVersion++; moveControls(); cancellationControls(); message('');
+  $('#reschedule-message').textContent = '変更結果を確認しています。画面を閉じずにお待ちください。';
+  try {
+    const { reservation } = await api(`/api/admin/reservations/${target.id}/reschedule`, { updatedAt: target.updated_at, startsAt });
+    if (operationAuth !== authVersion || $('#dashboard').hidden) return;
+    if (reservation?.status !== 'confirmed' || Date.parse(reservation.starts_at) !== Date.parse(startsAt)) throw new Error('変更結果を確認できませんでした。');
+    closeReschedule();
+    $('#date').value = new Date(Date.parse(startsAt) + 9 * 3600000).toISOString().slice(0, 10);
+    const loaded = await load();
+    if (operationAuth === authVersion && !$('#dashboard').hidden) message(loaded ? '予約日時を変更しました。' : '変更は完了しました。一覧を再読み込みしてください。', !loaded);
+  } catch (error) {
+    if (operationAuth !== authVersion || $('#dashboard').hidden) return;
+    closeReschedule();
+    if (error.status === 401 || error.status === 403) { show(false); message(error.message, true); return; }
+    await load();
+    if (operationAuth === authVersion && !$('#dashboard').hidden) message(
+      error.status === 409 || error.status === 400 || error.status === 404 ? error.message : '変更結果が不明です。再操作の前に、変更前と変更先の日付の一覧を確認してください。', true);
+  } finally { cancelling = false; moveControls(); cancellationControls(); }
 });

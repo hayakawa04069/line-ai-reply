@@ -2,7 +2,7 @@ import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { AppError, createServices, dateRange, uuid, validTimestamp } from './lib.js';
+import { AppError, createServices, dateRange, uuid, validTimestamp, validStart } from './lib.js';
 
 export function createBookingServer(config, services = createServices(config)) {
   const sessions = new Map();
@@ -107,6 +107,20 @@ export function createBookingServer(config, services = createServices(config)) {
         const session = await admin(req);
         const date = url.searchParams.get('date'); dateRange(date);
         return json(200, { reservations: await services.reservations(date, session.token) });
+      }
+      const reschedule = path.match(/^\/api\/admin\/reservations\/([^/]+)\/(reschedule|reschedule-slots)$/);
+      if (reschedule && req.method === 'GET' && reschedule[2] === 'reschedule-slots') {
+        const session = await admin(req);
+        if (!uuid(reschedule[1])) throw new AppError(400, '予約情報を確認してください。');
+        const date = url.searchParams.get('date'); dateRange(date);
+        return json(200, await services.rescheduleSlots(reschedule[1], date, session.token));
+      }
+      if (reschedule && req.method === 'POST' && reschedule[2] === 'reschedule') {
+        const session = await admin(req);
+        const data = await body(req);
+        if (!uuid(reschedule[1]) || !validTimestamp(data.updatedAt) || !validStart(data.startsAt)
+            || Object.keys(data).length !== 2) throw new AppError(400, '変更する日時を確認してください。');
+        return json(200, { reservation: await services.rescheduleReservation(reschedule[1], data.updatedAt, data.startsAt, session.token) });
       }
       const cancellation = path.match(/^\/api\/admin\/reservations\/([^/]+)\/cancel$/);
       if (req.method === 'POST' && cancellation) {
