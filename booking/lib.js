@@ -41,6 +41,15 @@ export function dateRange(date) {
   const start = new Date(`${date}T00:00:00+09:00`);
   return [start.toISOString(), new Date(start.getTime() + 86400000).toISOString()];
 }
+export function monthRange(month) {
+  if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)
+      || Number(month.slice(0, 4)) < 1000 || Number(month.slice(0, 4)) > 9998) {
+    throw new AppError(400, '表示する月を確認してください。');
+  }
+  const [year, number] = month.split('-').map(Number);
+  const next = `${number === 12 ? year + 1 : year}-${String(number === 12 ? 1 : number + 1).padStart(2, '0')}`;
+  return [new Date(`${month}-01T00:00:00+09:00`).toISOString(), new Date(`${next}-01T00:00:00+09:00`).toISOString()];
+}
 export function availableSlots({ date, menu, settings, hours, closed, reservations, now = new Date() }) {
   dateRange(date);
   const today = japanDate(now);
@@ -71,7 +80,7 @@ export function createServices(config, fetchImpl = fetch) {
     if (!response.ok) {
       if (data?.code === 'P2001') throw new AppError(409, '他の担当者が営業設定を変更しました。再読み込みして入力し直してください。');
       if (data?.code === 'P2002') throw new AppError(409, '既存の予約と矛盾するため保存できません。営業時間・予約間隔・休業日を確認してください。');
-      if (data?.code === 'PGRST202') throw new AppError(503, '営業設定用の追加SQLが未適用か、APIに反映されていません。');
+      if (data?.code === 'PGRST202') { const error = new AppError(503, '営業設定用の追加SQLが未適用か、APIに反映されていません。'); error.missingFunction = true; throw error; }
       if (['22007', '22008', '22P02'].includes(data?.code)) throw new AppError(400, '営業設定の入力を確認してください。');
       if (data?.code === '23P01') throw new AppError(409, '先に予約が入りました。別の時間を選んでください。');
       if (data?.code === '23505') { const error = new AppError(409, '予約を確認できません。再読込してお試しください。'); error.duplicate = true; throw error; }
@@ -117,6 +126,29 @@ export function createServices(config, fetchImpl = fetch) {
     return { menu: menus[0], slots: availableSlots({ date, menu: menus[0], settings: stores[0], hours: hours[0], closed: closed.length > 0, reservations }) };
   }
   return {
+    async monthCounts(month, token) {
+      if (typeof token !== 'string' || !token) throw new AppError(401, '管理者ログインが必要です。');
+      const [start, end] = monthRange(month);
+      let result;
+      try {
+        result = await db(query('rpc/get_booking_month_counts', { p_month: `${month}-01` }), { token });
+      } catch (error) {
+        if (error.missingFunction) throw new AppError(503, '月間カレンダー用の追加SQL（005）が未適用か、APIに反映されていません。');
+        throw error;
+      }
+      const days = (Date.parse(end) - Date.parse(start)) / 86400000;
+      if (result?.month !== month || !Array.isArray(result.days) || result.days.length !== days) {
+        throw new AppError(503, '月間の件数を取得できませんでした。再読み込みしてください。');
+      }
+      const safeDays = result.days.map((row, i) => {
+        const date = `${month}-${String(i + 1).padStart(2, '0')}`;
+        if (row?.date !== date || !['confirmed', 'completed', 'cancelled'].every(key => Number.isSafeInteger(row[key]) && row[key] >= 0)) {
+          throw new AppError(503, '月間の件数を取得できませんでした。再読み込みしてください。');
+        }
+        return { date, confirmed: row.confirmed, completed: row.completed, cancelled: row.cancelled };
+      });
+      return { month, days: safeDays };
+    },
     async businessSettings(token) {
       if (!token) throw new AppError(401, '管理者ログインが必要です。');
       return db('rpc/get_business_settings', { token });

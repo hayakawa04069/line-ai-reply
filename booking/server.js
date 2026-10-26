@@ -2,7 +2,7 @@ import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { AppError, createServices, dateRange, uuid, validTimestamp, validStart, validateBusinessSettings } from './lib.js';
+import { AppError, createServices, dateRange, uuid, validTimestamp, validStart, validateBusinessSettings, monthRange } from './lib.js';
 
 export function createBookingServer(config, services = createServices(config)) {
   const sessions = new Map();
@@ -12,6 +12,7 @@ export function createBookingServer(config, services = createServices(config)) {
     ['/app.js', ['app.js', 'text/javascript']], ['/admin.js', ['admin.js', 'text/javascript']],
     ['/common.js', ['common.js', 'text/javascript']],
     ['/settings.js', ['settings.js', 'text/javascript']],
+    ['/admin-calendar.js', ['admin-calendar.js', 'text/javascript']],
     ['/style.css', ['style.css', 'text/css']],
   ]);
   const secure = config.origin.startsWith('https://');
@@ -108,6 +109,11 @@ export function createBookingServer(config, services = createServices(config)) {
         const session = await admin(req);
         const date = url.searchParams.get('date'); dateRange(date);
         return json(200, { reservations: await services.reservations(date, session.token) });
+      }
+      if (path === '/api/admin/calendar' && req.method === 'GET') {
+        const session = await admin(req);
+        const month = url.searchParams.get('month'); monthRange(month);
+        return json(200, await services.monthCounts(month, session.token));
       }
       if (path === '/api/admin/business-settings' && req.method === 'GET') {
         const session = await admin(req);

@@ -9,7 +9,23 @@
     <section id="login-panel" class="panel login-panel"><h2>管理者ログイン</h2><p class="muted">店舗管理者として登録されたアカウントでログインしてください。</p>
       <form id="login-form"><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="username" maxlength="254" required><label for="password">パスワード</label><input id="password" type="password" autocomplete="current-password" maxlength="1024" required><button id="login" class="primary" type="submit">ログイン</button></form>
     </section>
-    <section id="dashboard" class="panel" hidden><div class="section-heading"><h2>予約一覧</h2><div class="admin-actions"><button id="open-settings" class="secondary" type="button">営業設定</button><button id="logout" class="secondary" type="button">ログアウト</button></div></div>
+    <section id="dashboard" class="panel" hidden><div class="section-heading"><h2>予約一覧</h2><div class="admin-actions"><button id="open-calendar" class="secondary" type="button" aria-expanded="false" aria-controls="admin-calendar-panel">月間カレンダーを表示</button><button id="open-settings" class="secondary" type="button">営業設定</button><button id="logout" class="secondary" type="button">ログアウト</button></div></div>
+      <section id="admin-calendar-panel" class="admin-calendar-panel" aria-label="月間予約カレンダー" hidden>
+        <div class="admin-month-toolbar">
+          <button id="admin-previous-month" type="button" aria-label="前の月">‹</button>
+          <label for="admin-month">表示月</label><input id="admin-month" type="month" min="1000-01" max="9998-12" required>
+          <button id="admin-next-month" type="button" aria-label="次の月">›</button>
+          <button id="admin-current-month" class="secondary" type="button">今月</button>
+          <button id="admin-month-refresh" class="secondary" type="button">月間を再読み込み</button>
+        </div>
+        <p class="muted">各日の大きな数字は確定予約の件数です。「来店」「取消」は別に表示します。日付を押すと下の予約一覧を開きます。日本時間で集計しています。</p>
+        <p id="admin-month-message" role="status" aria-live="polite"></p>
+        <div id="admin-month-content" hidden>
+          <p id="admin-month-total"></p>
+          <div class="weekdays" aria-hidden="true"><span>日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span>土</span></div>
+          <div id="admin-month-grid" class="admin-month-grid" role="group" aria-label="日付別の予約件数"></div>
+        </div>
+      </section>
       <div class="date-toolbar"><button id="previous-day" aria-label="前日">‹</button><label for="date">表示する日付</label><input id="date" type="date" required><button id="next-day" aria-label="翌日">›</button><button id="refresh" class="secondary">再読み込み</button></div>
       <p class="muted">日本時間で表示しています。確定済みの予約の日時変更・キャンセルができます。営業設定もこの画面から変更できます。</p>
       <p id="count" role="status"></p><div id="reservation-list" class="reservation-list"></div>

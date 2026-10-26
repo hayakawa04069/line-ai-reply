@@ -1,3 +1,4 @@
+import { createAdminCalendar } from './admin-calendar.js';
 import { createSettingsPanel } from './settings.js';
 import { api, message, dateText, timeText, yen, today, node } from './common.js';
 const $ = selector => document.querySelector(selector);
@@ -8,6 +9,10 @@ let cancelTarget = null;
 let moveTarget = null;
 let slotVersion = 0;
 let moveMenu = null;
+const calendar = createAdminCalendar({
+  onSelect(date) { if (!cancelling && !$('#dashboard').hidden) { $('#date').value = date; load(); $('#count').scrollIntoView({ behavior: 'smooth', block: 'center' }); } },
+  onUnauthorized(error) { show(false); message(error.message, true); },
+});
 const settingsPanel = createSettingsPanel(error => { show(false); message(error.message, true); });
 function closeConfirmation() {
   $('#cancel-dialog').close();
@@ -19,6 +24,7 @@ function cancellationControls() {
   $('#cancel-back').disabled = cancelling;
   $('#cancel-confirm').textContent = cancelling ? 'キャンセル処理中…' : 'キャンセルを確定';
   $('#cancel-progress').textContent = cancelling ? '予約の状態を確認しています。画面を閉じずにお待ちください。' : '';
+  calendar.setBusy(cancelling);
   for (const element of document.querySelectorAll('.cancel-reservation, .reschedule-reservation, .date-toolbar button, #date')) element.disabled = cancelling;
 }
 function openConfirmation(reservation) {
@@ -35,12 +41,13 @@ function openConfirmation(reservation) {
 function show(loggedIn) {
   $('#login-panel').hidden = loggedIn; $('#dashboard').hidden = !loggedIn;
   if (!loggedIn) {
-    authVersion++; version++; closeConfirmation(); closeReschedule(); settingsPanel.reset();
+    authVersion++; version++; closeConfirmation(); closeReschedule(); settingsPanel.reset(); calendar.reset();
     $('#reservation-list').replaceChildren(); $('#count').textContent = '';
   }
 }
 async function load() {
   const request = ++version;
+  calendar.syncDate($('#date').value, true);
   $('#reservation-list').replaceChildren(); $('#count').textContent = '予約を読み込んでいます…';
   try {
     const { reservations } = await api(`/api/admin/reservations?${new URLSearchParams({ date: $('#date').value })}`);
