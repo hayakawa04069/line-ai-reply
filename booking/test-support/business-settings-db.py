@@ -88,9 +88,19 @@ try:
       grant execute on function auth.uid() to authenticated;
       insert into auth.users values ('{ADMIN}'), ('{USER}');
     """)
-    for file in ['001_initial.sql', '002_example_settings.sql', '003_business_settings.sql']:
+    for file in ['001_initial.sql', '002_example_settings.sql']:
         run((ROOT / 'booking/database' / file).read_text())
+    run((ROOT / 'booking/database/004_business_settings_filtered_writes.sql').read_text(), error='P0001')
+    passed('004 refuses installation before 003 without creating a partial function')
+    run((ROOT / 'booking/database/003_business_settings.sql').read_text())
     run(f"insert into public.booking_admins(user_id) values ('{ADMIN}');")
+    upgrade_before = run("select row_to_json(s)::text from public.booking_settings s;")
+    grants_before = run("select proacl::text || prosecdef::text || proowner::text || proconfig::text from pg_proc where oid='public.save_business_settings(uuid,integer,jsonb,jsonb)'::regprocedure;")
+    run((ROOT / 'booking/database/004_business_settings_filtered_writes.sql').read_text())
+    assert run("select row_to_json(s)::text from public.booking_settings s;") == upgrade_before
+    assert run("select proacl::text || prosecdef::text || proowner::text || proconfig::text from pg_proc where oid='public.save_business_settings(uuid,integer,jsonb,jsonb)'::regprocedure;") == grants_before
+    passed('004 upgrade preserves settings values, revision and existing grants')
+
     original = settings()
     assert original['slotMinutes'] == 15 and len(original['hours']) == 6
     passed('migration and approved default schedule')
@@ -127,6 +137,44 @@ try:
     assert result['hours'][0]['closes_at'] == '19:00'
     save(candidate, error='P2001')
     passed('valid save and stale revision rejection')
+    # A delete audit proves rows that remain in the payload are not deleted/recreated.
+    run("""
+      create table public.fixture_deletes(table_name text, key text);
+      create function public.fixture_track_delete() returns trigger language plpgsql as $$
+      begin
+        insert into public.fixture_deletes values (TG_TABLE_NAME,
+          case when TG_TABLE_NAME='business_hours' then to_jsonb(OLD)->>'weekday'
+               else to_jsonb(OLD)->>'closed_date' end);
+        return OLD;
+      end;
+      $$;
+      grant insert on public.fixture_deletes to authenticated;
+      create trigger fixture_hours_delete after delete on public.business_hours
+        for each row execute function public.fixture_track_delete();
+      create trigger fixture_days_delete after delete on public.closed_days
+        for each row execute function public.fixture_track_delete();
+    """)
+    payload = settings()
+    payload['closedDays'] = [
+      {'date': str(monday + timedelta(days=8)), 'reason': 'Keep'},
+      {'date': str(monday + timedelta(days=9)), 'reason': 'Remove'},
+    ]
+    save(payload)
+    assert run('select count(*) from public.fixture_deletes;') == '0'
+    payload = settings()
+    payload['hours'] = [h for h in payload['hours'] if h['weekday'] != 6]
+    payload['closedDays'] = [{'date': str(monday + timedelta(days=8)), 'reason': 'Updated'}]
+    save(payload)
+    deleted = run('select table_name || chr(58) || key from public.fixture_deletes order by table_name;').splitlines()
+    assert deleted == ['business_hours:6', 'closed_days:' + str(monday + timedelta(days=9))], deleted
+    assert settings()['closedDays'][0]['reason'] == 'Updated'
+    restored = settings()
+    restored['hours'] = original['hours']
+    restored['closedDays'] = []
+    save(restored)
+    result = settings()
+    passed('filtered deletes remove only omitted weekdays/dates; retained rows are updated')
+
 
     run("begin; update public.business_hours set closes_at='11:00' where weekday=1; commit;", error='P2002')
     assert settings() == result
