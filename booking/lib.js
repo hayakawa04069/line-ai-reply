@@ -9,6 +9,28 @@ export const validTimestamp = value => typeof value === 'string'
 export const validStart = value => typeof value === 'string'
   && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/.test(value)
   && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+export function validateBusinessSettings(data) {
+  const fail = () => { throw new AppError(400, '営業時間・予約間隔・休業日の入力を確認してください。'); };
+  const exact = (item, keys) => item && typeof item === 'object' && !Array.isArray(item)
+    && Object.keys(item).length === keys.length && keys.every(key => Object.hasOwn(item, key));
+  if (!exact(data, ['revision', 'slotMinutes', 'hours', 'closedDays']) || !uuid(data.revision)
+      || ![5, 10, 15, 20, 30, 60].includes(data.slotMinutes)
+      || !Array.isArray(data.hours) || data.hours.length > 7
+      || !Array.isArray(data.closedDays) || data.closedDays.length > 100) fail();
+  const time = value => typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+  for (const h of data.hours) {
+    if (!exact(h, ['weekday', 'opens_at', 'closes_at']) || !Number.isInteger(h.weekday)
+        || h.weekday < 0 || h.weekday > 6 || !time(h.opens_at) || !time(h.closes_at)
+        || h.opens_at >= h.closes_at) fail();
+  }
+  if (new Set(data.hours.map(h => h.weekday)).size !== data.hours.length) fail();
+  for (const c of data.closedDays) {
+    if (!exact(c, ['date', 'reason']) || !validDate(c.date)
+        || typeof c.reason !== 'string' || [...c.reason].length > 200) fail();
+  }
+  if (new Set(data.closedDays.map(c => c.date)).size !== data.closedDays.length) fail();
+  return data;
+}
 export const japanDate = (now = new Date()) => new Date(now.getTime() + 9 * 3600000).toISOString().slice(0, 10);
 export function validDate(value) {
   return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
@@ -47,6 +69,10 @@ export function createServices(config, fetchImpl = fetch) {
     let data;
     try { data = await response.json(); } catch { data = null; }
     if (!response.ok) {
+      if (data?.code === 'P2001') throw new AppError(409, '他の担当者が営業設定を変更しました。再読み込みして入力し直してください。');
+      if (data?.code === 'P2002') throw new AppError(409, '既存の予約と矛盾するため保存できません。営業時間・予約間隔・休業日を確認してください。');
+      if (data?.code === 'PGRST202') throw new AppError(503, '営業設定用の追加SQLが未適用か、APIに反映されていません。');
+      if (['22007', '22008', '22P02'].includes(data?.code)) throw new AppError(400, '営業設定の入力を確認してください。');
       if (data?.code === '23P01') throw new AppError(409, '先に予約が入りました。別の時間を選んでください。');
       if (data?.code === '23505') { const error = new AppError(409, '予約を確認できません。再読込してお試しください。'); error.duplicate = true; throw error; }
       if (data?.code === '23514') throw new AppError(400, 'この日時・メニューでは予約できません。空き時間を選び直してください。');
@@ -91,6 +117,23 @@ export function createServices(config, fetchImpl = fetch) {
     return { menu: menus[0], slots: availableSlots({ date, menu: menus[0], settings: stores[0], hours: hours[0], closed: closed.length > 0, reservations }) };
   }
   return {
+    async businessSettings(token) {
+      if (!token) throw new AppError(401, '管理者ログインが必要です。');
+      return db('rpc/get_business_settings', { token });
+    },
+    async saveBusinessSettings(data, token) {
+      if (!token) throw new AppError(401, '管理者ログインが必要です。');
+      validateBusinessSettings(data);
+      try {
+        return await db('rpc/save_business_settings', { token, method: 'POST', body: {
+          p_revision: data.revision, p_slot_minutes: data.slotMinutes,
+          p_hours: data.hours, p_closed_days: data.closedDays,
+        } });
+      } catch (error) {
+        if (error.status === 400) throw new AppError(400, '営業時間・予約間隔・休業日の入力を確認してください。');
+        throw error;
+      }
+    },
     async catalog() {
       const [store, menus] = await Promise.all([settings(), db('menus?select=id,name,duration_minutes,price_yen&active=eq.true&order=name')]);
       return { store, menus };

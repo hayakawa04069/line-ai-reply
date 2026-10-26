@@ -2,7 +2,7 @@ import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { AppError, createServices, dateRange, uuid, validTimestamp, validStart } from './lib.js';
+import { AppError, createServices, dateRange, uuid, validTimestamp, validStart, validateBusinessSettings } from './lib.js';
 
 export function createBookingServer(config, services = createServices(config)) {
   const sessions = new Map();
@@ -11,6 +11,7 @@ export function createBookingServer(config, services = createServices(config)) {
     ['/', ['index.html', 'text/html']], ['/admin', ['admin.html', 'text/html']],
     ['/app.js', ['app.js', 'text/javascript']], ['/admin.js', ['admin.js', 'text/javascript']],
     ['/common.js', ['common.js', 'text/javascript']],
+    ['/settings.js', ['settings.js', 'text/javascript']],
     ['/style.css', ['style.css', 'text/css']],
   ]);
   const secure = config.origin.startsWith('https://');
@@ -25,13 +26,13 @@ export function createBookingServer(config, services = createServices(config)) {
     if (++entry.count > max) throw new AppError(429, '操作が多すぎます。少し待ってお試しください。');
     limits.set(key, entry);
   }
-  async function body(req) {
+  async function body(req, maxSize = 16384) {
     if (!req.headers['content-type']?.startsWith('application/json')) throw new AppError(415, 'JSON形式が必要です。');
     let size = 0;
     const chunks = [];
     for await (const chunk of req) {
       size += chunk.length;
-      if (size > 16384) throw new AppError(413, '送信内容が大きすぎます。');
+      if (size > maxSize) throw new AppError(413, '送信内容が大きすぎます。');
       chunks.push(chunk);
     }
     try {
@@ -107,6 +108,14 @@ export function createBookingServer(config, services = createServices(config)) {
         const session = await admin(req);
         const date = url.searchParams.get('date'); dateRange(date);
         return json(200, { reservations: await services.reservations(date, session.token) });
+      }
+      if (path === '/api/admin/business-settings' && req.method === 'GET') {
+        const session = await admin(req);
+        return json(200, await services.businessSettings(session.token));
+      }
+      if (path === '/api/admin/business-settings' && req.method === 'POST') {
+        const session = await admin(req);
+        return json(200, await services.saveBusinessSettings(validateBusinessSettings(await body(req, 98304)), session.token));
       }
       const reschedule = path.match(/^\/api\/admin\/reservations\/([^/]+)\/(reschedule|reschedule-slots)$/);
       if (reschedule && req.method === 'GET' && reschedule[2] === 'reschedule-slots') {

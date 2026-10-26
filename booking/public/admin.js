@@ -1,3 +1,4 @@
+import { createSettingsPanel } from './settings.js';
 import { api, message, dateText, timeText, yen, today, node } from './common.js';
 const $ = selector => document.querySelector(selector);
 let version = 0;
@@ -7,6 +8,7 @@ let cancelTarget = null;
 let moveTarget = null;
 let slotVersion = 0;
 let moveMenu = null;
+const settingsPanel = createSettingsPanel(error => { show(false); message(error.message, true); });
 function closeConfirmation() {
   $('#cancel-dialog').close();
   cancelTarget = null;
@@ -33,7 +35,7 @@ function openConfirmation(reservation) {
 function show(loggedIn) {
   $('#login-panel').hidden = loggedIn; $('#dashboard').hidden = !loggedIn;
   if (!loggedIn) {
-    authVersion++; version++; closeConfirmation(); closeReschedule();
+    authVersion++; version++; closeConfirmation(); closeReschedule(); settingsPanel.reset();
     $('#reservation-list').replaceChildren(); $('#count').textContent = '';
   }
 }

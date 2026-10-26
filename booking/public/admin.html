@@ -9,11 +9,32 @@
     <section id="login-panel" class="panel login-panel"><h2>管理者ログイン</h2><p class="muted">店舗管理者として登録されたアカウントでログインしてください。</p>
       <form id="login-form"><label for="email">メールアドレス</label><input id="email" type="email" autocomplete="username" maxlength="254" required><label for="password">パスワード</label><input id="password" type="password" autocomplete="current-password" maxlength="1024" required><button id="login" class="primary" type="submit">ログイン</button></form>
     </section>
-    <section id="dashboard" class="panel" hidden><div class="section-heading"><h2>予約一覧</h2><button id="logout" class="secondary" type="button">ログアウト</button></div>
+    <section id="dashboard" class="panel" hidden><div class="section-heading"><h2>予約一覧</h2><div class="admin-actions"><button id="open-settings" class="secondary" type="button">営業設定</button><button id="logout" class="secondary" type="button">ログアウト</button></div></div>
       <div class="date-toolbar"><button id="previous-day" aria-label="前日">‹</button><label for="date">表示する日付</label><input id="date" type="date" required><button id="next-day" aria-label="翌日">›</button><button id="refresh" class="secondary">再読み込み</button></div>
-      <p class="muted">日本時間で表示しています。確定済みの予約の日時変更・キャンセルができます。営業設定画面は今後追加予定です。</p>
+      <p class="muted">日本時間で表示しています。確定済みの予約の日時変更・キャンセルができます。営業設定もこの画面から変更できます。</p>
       <p id="count" role="status"></p><div id="reservation-list" class="reservation-list"></div>
     </section>
+    <section id="settings-panel" class="panel" hidden>
+      <div class="section-heading"><h2>営業時間・予約枠・休業日</h2><button id="settings-close" class="secondary" type="button">閉じる</button></div>
+      <p>日本時間・1日1つの営業時間です。定休日は営業のチェックを外してください。既存予約と矛盾する設定は保存できません。</p>
+      <p id="settings-message" class="notice" role="status" aria-live="polite" hidden></p>
+      <button id="settings-reload" class="secondary" type="button">保存済み設定を再読み込み</button>
+      <form id="settings-form">
+        <label for="settings-slot">予約を開始できる間隔</label>
+        <select id="settings-slot"><option value="5">5分</option><option value="10">10分</option><option value="15">15分</option><option value="20">20分</option><option value="30">30分</option><option value="60">60分</option></select>
+        <p class="muted">メニューの所要時間とは別です。メニューの内容・料金は変更しません。</p>
+        <fieldset><legend>曜日ごとの営業時間</legend><div id="settings-hours"></div></fieldset>
+        <fieldset><legend>臨時休業日（最大100件）</legend><div id="settings-closed"></div><button id="settings-add-day" class="secondary" type="button">休業日を追加</button></fieldset>
+        <button id="settings-review" class="primary" type="submit" disabled>変更内容を確認する</button>
+      </form>
+    </section>
+    <dialog id="settings-dialog" aria-labelledby="settings-title">
+      <h2 id="settings-title">営業設定を保存しますか？</h2>
+      <p>以下の設定で保存します。予約履歴は変更しません。</p>
+      <div id="settings-summary" class="summary"></div>
+      <p id="settings-progress" role="status" aria-live="polite"></p>
+      <div class="dialog-actions"><button id="settings-back" class="secondary" type="button" autofocus>戻る</button><button id="settings-save" type="button">保存を確定</button></div>
+    </dialog>
     <dialog id="reschedule-dialog" aria-labelledby="reschedule-title">
       <h2 id="reschedule-title">予約日時を変更する</h2>
       <div id="reschedule-original" class="summary"></div>
