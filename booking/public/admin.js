@@ -1,5 +1,6 @@
-import { createAdminCalendar } from './admin-calendar.js';
 import { createSettingsPanel } from './settings.js';
+import { createAutoRefresh } from './auto-refresh.js';
+import { createAdminCalendar } from './admin-calendar.js';
 import { api, message, dateText, timeText, yen, today, node } from './common.js';
 const $ = selector => document.querySelector(selector);
 let version = 0;
@@ -9,11 +10,13 @@ let cancelTarget = null;
 let moveTarget = null;
 let slotVersion = 0;
 let moveMenu = null;
+const settingsPanel = createSettingsPanel(error => { show(false); message(error.message, true); });
+let loadingCount = 0;
+const protectedInput = () => cancelling || Boolean(cancelTarget || moveTarget) || !$('#settings-panel').hidden;
 const calendar = createAdminCalendar({
   onSelect(date) { if (!cancelling && !$('#dashboard').hidden) { $('#date').value = date; load(); $('#count').scrollIntoView({ behavior: 'smooth', block: 'center' }); } },
   onUnauthorized(error) { show(false); message(error.message, true); },
 });
-const settingsPanel = createSettingsPanel(error => { show(false); message(error.message, true); });
 function closeConfirmation() {
   $('#cancel-dialog').close();
   cancelTarget = null;
@@ -43,15 +46,19 @@ function show(loggedIn) {
   if (!loggedIn) {
     authVersion++; version++; closeConfirmation(); closeReschedule(); settingsPanel.reset(); calendar.reset();
     $('#reservation-list').replaceChildren(); $('#count').textContent = '';
+    $('#admin-last-updated').textContent = '';
   }
 }
-async function load() {
+async function load(options = {}) {
+  const background = options.background === true;
   const request = ++version;
-  calendar.syncDate($('#date').value, true);
-  $('#reservation-list').replaceChildren(); $('#count').textContent = '予約を読み込んでいます…';
+  loadingCount++;
+  if (!background) calendar.syncDate($('#date').value, true);
+  if (!background) { $('#reservation-list').replaceChildren(); $('#count').textContent = '予約を読み込んでいます…'; }
   try {
     const { reservations } = await api(`/api/admin/reservations?${new URLSearchParams({ date: $('#date').value })}`);
-    if (request !== version) return false;
+    if (request !== version || (background && protectedInput())) return false;
+    $('#reservation-list').replaceChildren();
     $('#count').textContent = `${$('#date').value.replaceAll('-', '/')} · ${reservations.length}件`;
     if (!reservations.length) $('#reservation-list').append(node('p', 'この日の予約はありません。', 'empty'));
     for (const reservation of reservations) {
@@ -71,14 +78,18 @@ async function load() {
       }
       $('#reservation-list').append(card);
     }
+    $('#admin-last-updated').textContent = `予約一覧の最終更新：${new Date().toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo' })}（日本時間・30秒ごとに自動更新）`;
     return true;
   } catch (error) {
     if (request !== version) return;
+    if (error.status === 401 || error.status === 403) { show(false); message(error.message, true); return false; }
+    if (background && protectedInput()) return false;
+    $('#reservation-list').replaceChildren();
     $('#count').textContent = '取得できませんでした。';
-    if (error.status === 401 || error.status === 403) show(false);
+    $('#admin-last-updated').textContent = '更新に失敗しました。最新情報は未確認です。';
     message(error.message, true);
     return false;
-  }
+  } finally { loadingCount--; }
 }
 $('#cancel-back').addEventListener('click', () => { if (!cancelling) closeConfirmation(); });
 $('#cancel-dialog').addEventListener('cancel', event => {
@@ -137,16 +148,34 @@ async function checkSession() {
   try { await api('/api/admin/session'); return true; }
   catch (error) { show(false); message(error.message, true); return false; }
 }
-setInterval(() => { if (!$('#dashboard').hidden) checkSession(); }, 60000);
+setInterval(() => { if (!document.hidden && !$('#dashboard').hidden) checkSession(); }, 60000);
+const autoRefresh = createAutoRefresh({
+  canRefresh: () => !document.hidden && !$('#dashboard').hidden && !protectedInput() && loadingCount === 0,
+  refresh: async () => {
+    if (await load({ background: true }) && !protectedInput() && !$('#dashboard').hidden) await calendar.refresh();
+  },
+});
 let resumeSession = false;
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) {
     resumeSession = !$('#dashboard').hidden;
-    if (resumeSession) show(false);
+    if (resumeSession) {
+      version++; authVersion++;
+      $('#dashboard').hidden = true;
+      $('#reservation-list').replaceChildren();
+      calendar.suspend();
+      for (const dialog of document.querySelectorAll('dialog')) dialog.style.visibility = 'hidden';
+    }
     $('#password').value = '';
   } else if (resumeSession) {
     resumeSession = false;
-    if (await checkSession()) { show(true); load(); }
+    if (await checkSession()) {
+      show(true);
+      for (const dialog of document.querySelectorAll('dialog')) dialog.style.visibility = '';
+      autoRefresh.tick().catch(() => {});
+    } else {
+      for (const dialog of document.querySelectorAll('dialog')) dialog.style.visibility = '';
+    }
   }
 });
 

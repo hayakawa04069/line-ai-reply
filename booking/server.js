@@ -12,6 +12,7 @@ export function createBookingServer(config, services = createServices(config)) {
     ['/app.js', ['app.js', 'text/javascript']], ['/admin.js', ['admin.js', 'text/javascript']],
     ['/common.js', ['common.js', 'text/javascript']],
     ['/settings.js', ['settings.js', 'text/javascript']],
+    ['/auto-refresh.js', ['auto-refresh.js', 'text/javascript']],
     ['/admin-calendar.js', ['admin-calendar.js', 'text/javascript']],
     ['/style.css', ['style.css', 'text/css']],
   ]);

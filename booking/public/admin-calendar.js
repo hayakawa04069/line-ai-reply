@@ -116,5 +116,5 @@ export function createAdminCalendar({ onSelect, onUnauthorized }) {
       $('#admin-month').value = month; load();
     });
   }
-  return { reset, syncDate, setBusy(value) { busy = value; controls(); } };
+  return { suspend() { generation++; }, refresh: load, reset, syncDate, setBusy(value) { busy = value; controls(); } };
 }
